@@ -8,7 +8,14 @@
 $ ai how do I uncommit a local commit?
 `git reset --soft HEAD~1` — keeps the changes staged.
 Use `--mixed` (default) to unstage them, or `--hard` to discard.
+
+$ ai "what does set -euo pipefail do?"
+Makes a Bash script fail fast: -e exits on any error,
+-u errors on unset variables, -o pipefail propagates
+failures through pipelines.
 ```
+
+Both styles work — pass the question as plain words, or wrap it in quotes when it contains characters your shell would interpret (`?`, `*`, `|`, `&`, `;`, `!`). See [install step 4](#4-recommended-on-zsh-skip-the-quotes) for a zsh tip that lets you skip the quotes for `?` and `*`.
 
 ## Features
 
