@@ -2,6 +2,8 @@
 
 > A tiny `ai` command for your terminal — ask an LLM and get a short answer. Pure Bash, zero runtime dependencies beyond `curl` and `python3`.
 
+![demo](./demo.gif)
+
 `aiquestion` is a single-file Bash script (installed as `ai`) that sends your question to Claude, OpenAI, or a local Ollama model and prints the answer. It is built for the moments when you'd otherwise alt-tab to a chat window for a one-liner — `how do I uncommit a local commit?`, `what does this error mean?`, `summarize this diff` — and want the answer right where you are.
 
 ```console
