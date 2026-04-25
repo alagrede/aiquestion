@@ -1,0 +1,235 @@
+#!/usr/bin/env bash
+# ai — Ask a question to an LLM from your terminal and get a short answer.
+#
+# Usage:
+#   ai how do I uncommit a local commit?
+#   ai "what does set -euo pipefail do?"
+#   echo "..." | ai summarize this
+#   cat file.log | ai "what does this error mean?"
+#
+# Commands:
+#   ai config         Show the effective configuration
+#   ai help           Show help
+#   ai (with args)    Ask a question to the AI
+#   ai (no args)      Read the question from stdin
+
+set -euo pipefail
+
+# ─── Locate config file ───────────────────────────────────────────────────────
+# Priority: ./.airc  >  $XDG_CONFIG_HOME/ai/config  >  ~/.airc
+find_config() {
+  if [ -f "./.airc" ]; then echo "./.airc"; return; fi
+  local xdg="${XDG_CONFIG_HOME:-$HOME/.config}/ai/config"
+  if [ -f "$xdg" ]; then echo "$xdg"; return; fi
+  if [ -f "$HOME/.airc" ]; then echo "$HOME/.airc"; return; fi
+  echo ""
+}
+
+load_config() {
+  # Defaults
+  PROVIDER="claude"
+  MODEL="claude-haiku-4-5"
+  MAX_TOKENS="800"
+  LANGUAGE="auto"
+  STYLE_RULES="Be concise and direct. Answer in plain text suitable for a terminal. Use short code blocks fenced with backticks when showing commands. Skip preamble and disclaimers. If the question is short, the answer should be short too."
+  EXTRA_INSTRUCTIONS=""
+
+  local cfg; cfg="$(find_config)"
+  if [ -n "$cfg" ]; then
+    # shellcheck source=/dev/null
+    source "$cfg"
+    CONFIG_FILE="$cfg"
+  else
+    CONFIG_FILE=""
+  fi
+
+  # Env vars override config file
+  PROVIDER="${AI_PROVIDER:-$PROVIDER}"
+  MODEL="${AI_MODEL:-$MODEL}"
+}
+
+# ─── Minimal JSON escaping ────────────────────────────────────────────────────
+json_escape() {
+  python3 -c 'import json,sys; sys.stdout.write(json.dumps(sys.stdin.read())[1:-1])' 2>/dev/null \
+    || jq -Rs . <<<"$(cat)" | sed 's/^"//;s/"$//'
+}
+
+# ─── Prompt construction ──────────────────────────────────────────────────────
+build_prompt() {
+  local question="$1"
+  local context="$2"
+
+  local lang_line=""
+  if [ "$LANGUAGE" != "auto" ]; then
+    lang_line="- Reply in: $LANGUAGE"
+  else
+    lang_line="- Reply in the same language as the question."
+  fi
+
+  cat <<EOF
+You are a fast, no-fluff assistant invoked from a terminal CLI.
+
+OUTPUT RULES:
+$lang_line
+- $STYLE_RULES
+${EXTRA_INSTRUCTIONS:+- $EXTRA_INSTRUCTIONS}
+
+${context:+CONTEXT (from stdin):
+\`\`\`
+$context
+\`\`\`
+
+}QUESTION:
+$question
+EOF
+}
+
+# ─── Providers ────────────────────────────────────────────────────────────────
+call_claude() {
+  local prompt="$1"
+  : "${ANTHROPIC_API_KEY:?ANTHROPIC_API_KEY is not set}"
+  local payload
+  payload=$(cat <<EOF
+{
+  "model": "$MODEL",
+  "max_tokens": $MAX_TOKENS,
+  "messages": [{"role": "user", "content": "$(printf '%s' "$prompt" | json_escape)"}]
+}
+EOF
+)
+  curl -sS https://api.anthropic.com/v1/messages \
+    -H "x-api-key: $ANTHROPIC_API_KEY" \
+    -H "anthropic-version: 2023-06-01" \
+    -H "content-type: application/json" \
+    -d "$payload" \
+  | python3 -c 'import json,sys
+d=json.load(sys.stdin)
+if "content" in d:
+    print(d["content"][0]["text"])
+else:
+    sys.stderr.write("API error: "+json.dumps(d)+"\n"); sys.exit(1)'
+}
+
+call_openai() {
+  local prompt="$1"
+  : "${OPENAI_API_KEY:?OPENAI_API_KEY is not set}"
+  local payload
+  payload=$(cat <<EOF
+{
+  "model": "$MODEL",
+  "max_tokens": $MAX_TOKENS,
+  "messages": [{"role": "user", "content": "$(printf '%s' "$prompt" | json_escape)"}]
+}
+EOF
+)
+  curl -sS https://api.openai.com/v1/chat/completions \
+    -H "Authorization: Bearer $OPENAI_API_KEY" \
+    -H "content-type: application/json" \
+    -d "$payload" \
+  | python3 -c 'import json,sys
+d=json.load(sys.stdin)
+if "choices" in d:
+    print(d["choices"][0]["message"]["content"])
+else:
+    sys.stderr.write("API error: "+json.dumps(d)+"\n"); sys.exit(1)'
+}
+
+call_ollama() {
+  local prompt="$1"
+  local host="${OLLAMA_HOST:-http://localhost:11434}"
+  local payload
+  payload=$(cat <<EOF
+{
+  "model": "$MODEL",
+  "stream": false,
+  "prompt": "$(printf '%s' "$prompt" | json_escape)"
+}
+EOF
+)
+  curl -sS "$host/api/generate" \
+    -H "content-type: application/json" \
+    -d "$payload" \
+  | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d["response"])'
+}
+
+# ─── Ask ──────────────────────────────────────────────────────────────────────
+ask() {
+  local question="$1"
+  local context="$2"
+
+  if [ -z "$question" ]; then
+    echo "Error: empty question. Usage: ai <question> (or pipe one in via stdin)" >&2
+    return 1
+  fi
+
+  local prompt; prompt="$(build_prompt "$question" "$context")"
+
+  case "$PROVIDER" in
+    claude)  call_claude "$prompt" ;;
+    openai)  call_openai "$prompt" ;;
+    ollama)  call_ollama "$prompt" ;;
+    *) echo "Error: unknown provider '$PROVIDER' (use claude, openai, or ollama)" >&2; return 1 ;;
+  esac
+}
+
+# ─── Dispatch ─────────────────────────────────────────────────────────────────
+load_config
+
+case "${1:-}" in
+  config)
+    echo "Config file: ${CONFIG_FILE:-<none>}"
+    echo "Provider:    $PROVIDER"
+    echo "Model:       $MODEL"
+    echo "Language:    $LANGUAGE"
+    echo "Max tokens:  $MAX_TOKENS"
+    exit 0
+    ;;
+  -h|--help|help)
+    cat <<EOF
+ai — ask a question to an LLM from your terminal
+
+Usage:
+  ai <question>                Direct question (all args are concatenated)
+  echo "..." | ai <question>   Stdin content is added as context
+  ai config                    Show the effective configuration
+  ai help                      This help
+
+Examples:
+  ai how do I uncommit a local commit?
+  ai "explain set -euo pipefail"
+  cat error.log | ai "what does this error mean?"
+  git diff | ai summarize these changes
+
+Config file (first match wins):
+  ./.airc
+  \$XDG_CONFIG_HOME/ai/config
+  ~/.airc
+
+Required env (per provider):
+  claude  → ANTHROPIC_API_KEY
+  openai  → OPENAI_API_KEY
+  ollama  → (optional) OLLAMA_HOST, default http://localhost:11434
+
+One-off override:
+  AI_PROVIDER=openai AI_MODEL=gpt-4o-mini ai <question>
+EOF
+    exit 0
+    ;;
+esac
+
+# Capture stdin as context if it is a pipe
+context=""
+if [ ! -t 0 ]; then
+  context="$(cat)"
+fi
+
+# Concatenate remaining args as the question
+question="$*"
+
+# If no question in args but stdin has content, treat stdin as the question
+if [ -z "$question" ] && [ -n "$context" ]; then
+  question="$context"
+  context=""
+fi
+
+ask "$question" "$context"

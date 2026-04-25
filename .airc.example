@@ -1,0 +1,24 @@
+# ai configuration (sourced as bash)
+# Copy this file to ~/.airc, ./.airc, or $XDG_CONFIG_HOME/ai/config
+
+# Provider: claude | openai | ollama
+PROVIDER="claude"
+
+# Model name (depends on provider)
+MODEL="claude-haiku-4-5"
+# MODEL="claude-opus-4-7"
+# MODEL="gpt-4o-mini"          # for openai
+# MODEL="llama3.1"             # for ollama
+
+# Reply language: "auto" detects the language of the question,
+# or set explicitly: "english", "français", "español", etc.
+LANGUAGE="auto"
+
+# Max tokens of the reply
+MAX_TOKENS="800"
+
+# Style rules (passed verbatim into the prompt)
+STYLE_RULES="Be concise and direct. Answer in plain text suitable for a terminal. Use short code blocks fenced with backticks when showing commands. Skip preamble and disclaimers. If the question is short, the answer should be short too."
+
+# Optional extra instructions appended to the prompt
+# EXTRA_INSTRUCTIONS="Always show a one-liner command first when applicable."
