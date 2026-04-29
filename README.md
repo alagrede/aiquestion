@@ -39,15 +39,31 @@ Both styles work — pass the question as plain words, or wrap it in quotes when
 
 ### 1. Install the script in your `$PATH`
 
+Install into `~/bin/` (a user-owned directory, no `sudo` required):
+
 ```bash
-sudo install -m 755 ai /usr/local/bin/ai
+mkdir -p ~/bin
+curl -o ~/bin/ai https://raw.githubusercontent.com/alagrede/aiquestion-cli/main/ai
+chmod +x ~/bin/ai
 ```
 
-Or, if you cloned the repo somewhere else:
+Or, if you cloned the repo:
 
 ```bash
-curl -o /usr/local/bin/ai https://raw.githubusercontent.com/alagrede/aiquestion-cli/main/ai
-chmod +x /usr/local/bin/ai
+mkdir -p ~/bin
+install -m 755 ai ~/bin/ai
+```
+
+Then make sure `~/bin` is in your `$PATH`. Add the following line to your shell rc file (`~/.zshrc`, `~/.bashrc`, etc.):
+
+```bash
+export PATH="$HOME/bin:$PATH"
+```
+
+Reload your shell (`source ~/.zshrc`) and verify with:
+
+```bash
+which ai   # should print /Users/you/bin/ai
 ```
 
 ### 2. Set your API key
@@ -233,7 +249,7 @@ API costs are per-call and proportional to question + context size. With Claude 
 ## Uninstalling
 
 ```bash
-sudo rm /usr/local/bin/ai
+rm ~/bin/ai
 rm -f ~/.airc
 ```
 
